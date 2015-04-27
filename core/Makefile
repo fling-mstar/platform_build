@@ -438,16 +438,19 @@ bootimage-nodeps: $(MKEXT2IMG)
 
 else # TARGET_BOOTIMAGE_USE_EXT2 != true
 
-$(INSTALLED_BOOTIMAGE_TARGET): $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_FILES) $(BOOTIMAGE_EXTRA_DEPS)
+# MStar Android Patch Begin
+# Support mkimage
+$(INSTALLED_BOOTIMAGE_TARGET): $(MKIMAGE) $(INTERNAL_BOOTIMAGE_FILES)
 	$(call pretty,"Target boot image: $@")
-	$(hide) $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_ARGS) $(BOARD_MKBOOTIMG_ARGS) --output $@
+	$(hide) $(MKIMAGE) -A arm -O linux -T multi -C none -a $(BOARD_KERNEL_BASE) -e $(BOARD_KERNEL_BASE) -n 'MStar-linux' -d $(INSTALLED_KERNEL_TARGET):$(INSTALLED_RAMDISK_TARGET) $@
 	$(hide) $(call assert-max-image-size,$@,$(BOARD_BOOTIMAGE_PARTITION_SIZE),raw)
 
 .PHONY: bootimage-nodeps
-bootimage-nodeps: $(MKBOOTIMG)
+bootimage-nodeps: $(MKIMAGE)
 	@echo "make $@: ignoring dependencies"
-	$(hide) $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_ARGS) $(BOARD_MKBOOTIMG_ARGS) --output $(INSTALLED_BOOTIMAGE_TARGET)
+	$(hide) $(MKIMAGE) -A arm -O linux -T multi -C none -a $(BOARD_KERNEL_BASE) -e $(BOARD_KERNEL_BASE) -n 'MStar-linux' -d $(INSTALLED_KERNEL_TARGET):$(INSTALLED_RAMDISK_TARGET) $(INSTALLED_BOOTIMAGE_TARGET)
 	$(hide) $(call assert-max-image-size,$(INSTALLED_BOOTIMAGE_TARGET),$(BOARD_BOOTIMAGE_PARTITION_SIZE),raw)
+# MStar Android Patch End
 
 endif # TARGET_BOOTIMAGE_USE_EXT2
 
@@ -1118,9 +1121,11 @@ endif
 # -----------------------------------------------------------------
 # host tools needed to build dist and OTA packages
 
+# MStar Android Patch Begin
+# Support mkimage
 DISTTOOLS :=  $(HOST_OUT_EXECUTABLES)/minigzip \
 	  $(HOST_OUT_EXECUTABLES)/mkbootfs \
-	  $(HOST_OUT_EXECUTABLES)/mkbootimg \
+	  $(HOST_OUT_EXECUTABLES)/mkimage \
 	  $(HOST_OUT_EXECUTABLES)/fs_config \
 	  $(HOST_OUT_EXECUTABLES)/mkyaffs2image \
 	  $(HOST_OUT_EXECUTABLES)/zipalign \
@@ -1131,6 +1136,7 @@ DISTTOOLS :=  $(HOST_OUT_EXECUTABLES)/minigzip \
 	  $(HOST_OUT_EXECUTABLES)/simg2img \
 	  $(HOST_OUT_EXECUTABLES)/e2fsck \
 	  $(HOST_OUT_EXECUTABLES)/mkfs_ubifs
+# MStar Android Patch End
 
 OTATOOLS := $(DISTTOOLS) \
 	  $(HOST_OUT_EXECUTABLES)/aapt
