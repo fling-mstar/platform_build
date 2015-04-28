@@ -153,7 +153,9 @@ def LoadInfoDict(zip):
   makeint("fstab_version")
 
   d["fstab"] = LoadRecoveryFSTab(zip, d["fstab_version"])
-  d["build.prop"] = LoadBuildProp(zip)
+# MStar Android Patch Begin
+  #d["build.prop"] = LoadBuildProp(zip)
+# MStar Android Patch End
   return d
 
 def LoadBuildProp(zip):
@@ -187,7 +189,9 @@ def LoadRecoveryFSTab(zip, fstab_version):
       line = line.strip()
       if not line or line.startswith("#"): continue
       pieces = line.split()
-      if not (3 <= len(pieces) <= 4):
+# MStar Android Patch Begin
+      if not (3 <= len(pieces) <= 6):
+# MStar Android Patch End
         raise ValueError("malformed recovery.fstab line: \"%s\"" % (line,))
 
       p = Partition()
@@ -213,7 +217,7 @@ def LoadRecoveryFSTab(zip, fstab_version):
           if i.startswith("length="):
             p.length = int(i[7:])
           else:
-              print "%s: unknown option \"%s\"" % (p.mount_point, i)
+            print "%s: unknown option \"%s\"" % (p.mount_point, i)
 
       d[p.mount_point] = p
 
@@ -258,7 +262,9 @@ def DumpInfoDict(d):
   for k, v in sorted(d.items()):
     print "%-25s = (%s) %s" % (k, type(v).__name__, v)
 
-def BuildBootableImage(sourcedir, fs_config_file, info_dict=None):
+# MStar Android Patch Begin
+def BuildBootableImage(sourcedir, fs_config_file):
+# MStar Android Patch End
   """Take a kernel, cmdline, and ramdisk directory from the input (in
   'sourcedir'), and turn them into a boot image.  Return the image
   data, or None if sourcedir does not appear to contains files for
@@ -268,8 +274,10 @@ def BuildBootableImage(sourcedir, fs_config_file, info_dict=None):
       not os.access(os.path.join(sourcedir, "kernel"), os.F_OK)):
     return None
 
-  if info_dict is None:
-    info_dict = OPTIONS.info_dict
+# MStar Android Patch Begin
+  #if info_dict is None:
+  #  info_dict = OPTIONS.info_dict
+# MStar Android Patch End
 
   ramdisk_img = tempfile.NamedTemporaryFile()
   img = tempfile.NamedTemporaryFile()
@@ -304,9 +312,11 @@ def BuildBootableImage(sourcedir, fs_config_file, info_dict=None):
     cmd.append("--pagesize")
     cmd.append(open(fn).read().rstrip("\n"))
 
-  args = info_dict.get("mkbootimg_args", None)
-  if args and args.strip():
-    cmd.extend(args.split())
+# MStar Android Patch Begin
+  #args = info_dict.get("mkbootimg_args", None)
+  #if args and args.strip():
+  #  cmd.extend(args.split())
+# MStar Android Patch End
 
   cmd.extend(["--ramdisk", ramdisk_img.name,
               "--output", img.name])
@@ -325,8 +335,67 @@ def BuildBootableImage(sourcedir, fs_config_file, info_dict=None):
   return data
 
 
-def GetBootableImage(name, prebuilt_name, unpack_dir, tree_subdir,
-                     info_dict=None):
+# MStar Android Patch Begin
+def BuildMStarBootableImage(prebuilt_name, sourcedir,fs_config_file):
+  """Take a kernel, and ramdisk directory from the input (in
+  'sourcedir'), and turn them into a boot image in MStar standard.
+  Return the image data, or None if sourcedir does not appear to
+  contains files for building the requested image."""
+
+  if (not os.access(os.path.join(sourcedir, "RAMDISK"), os.F_OK) or
+      not os.access(os.path.join(sourcedir, "kernel"), os.F_OK)):
+    return None
+
+  ramdisk_img = tempfile.NamedTemporaryFile()
+  img = tempfile.NamedTemporaryFile()
+  if os.access(fs_config_file, os.F_OK):
+    cmd = ["mkbootfs", "-f", fs_config_file, os.path.join(sourcedir, "RAMDISK")]
+  else:
+    cmd = ["mkbootfs", os.path.join(sourcedir, "RAMDISK")]
+  p1 = Run(cmd, stdout=subprocess.PIPE)
+  p2 = Run(["minigzip"],
+           stdin=p1.stdout, stdout=ramdisk_img.file.fileno())
+
+  p2.wait()
+  p1.wait()
+  assert p1.returncode == 0, "mkbootfs of %s ramdisk failed" % (targetname,)
+  assert p2.returncode == 0, "minigzip of %s ramdisk failed" % (targetname,)
+
+  cmd = ["mkimage", "-A", "arm", "-O", "linux", "-T", "multi", "-C", "none"]
+
+  fn = os.path.join(sourcedir, "base")
+  if os.access(fn, os.F_OK):
+    cmd.append("-a")
+    cmd.append(open(fn).read().rstrip("\n"))
+    cmd.append("-e")
+    cmd.append(open(fn).read().rstrip("\n"))
+  if (prebuilt_name == "recovery.img"):
+    cmd.extend(["-n", "MStar-linux(recovery)"])
+  else:
+    cmd.extend(["-n", "MStar-linux"])
+  cmd.append("-d");
+  imgstring = "%s:%s" % (os.path.join(sourcedir, "kernel"), ramdisk_img.name)
+  cmd.append(imgstring)
+  cmd.append(img.name)
+
+  p = Run(cmd, stdout=subprocess.PIPE)
+  p.communicate()
+  assert p.returncode == 0, "mkimage of %s image failed" % (
+      os.path.basename(sourcedir),)
+
+  img.seek(os.SEEK_SET, 0)
+  data = img.read()
+
+  ramdisk_img.close()
+  img.close()
+
+  return data
+# MStar Android Patch End
+
+
+# MStar Android Patch Begin
+def GetBootableImage(name, prebuilt_name, unpack_dir, tree_subdir):
+# MStar Android Patch End
   """Return a File object (with name 'name') with the desired bootable
   image.  Look for it in 'unpack_dir'/BOOTABLE_IMAGES under the name
   'prebuilt_name', otherwise construct it from the source files in
@@ -339,9 +408,9 @@ def GetBootableImage(name, prebuilt_name, unpack_dir, tree_subdir,
   else:
     print "building image from target_files %s..." % (tree_subdir,)
     fs_config = "META/" + tree_subdir.lower() + "_filesystem_config.txt"
-    return File(name, BuildBootableImage(os.path.join(unpack_dir, tree_subdir),
-                                         os.path.join(unpack_dir, fs_config),
-                                         info_dict))
+# MStar Android Patch Begin
+    return File(name, BuildMStarBootableImage(prebuilt_name, os.path.join(unpack_dir, tree_subdir),os.path.join(unpack_dir, fs_config)))
+# MStar Android Patch End
 
 
 def UnzipTemp(filename, pattern=None):
@@ -834,20 +903,21 @@ class File(object):
   def AddToZip(self, z):
     ZipWriteStr(z, self.name, self.data)
 
+# MStar Android Patch Begin
 DIFF_PROGRAM_BY_EXT = {
     ".gz" : "imgdiff",
     ".zip" : ["imgdiff", "-z"],
     ".jar" : ["imgdiff", "-z"],
     ".apk" : ["imgdiff", "-z"],
-    ".img" : "imgdiff",
+    ".img" : ["imgdiff", "-z"],
     }
 
 class Difference(object):
-  def __init__(self, tf, sf, diff_program=None):
+  def __init__(self, tf, sf):
     self.tf = tf
     self.sf = sf
     self.patch = None
-    self.diff_program = diff_program
+# MStar Android Patch End
 
   def ComputePatch(self):
     """Compute the patch (as a string of data) needed to turn sf into
@@ -856,11 +926,10 @@ class Difference(object):
     tf = self.tf
     sf = self.sf
 
-    if self.diff_program:
-      diff_program = self.diff_program
-    else:
-      ext = os.path.splitext(tf.name)[1]
-      diff_program = DIFF_PROGRAM_BY_EXT.get(ext, "bsdiff")
+# MStar Android Patch Begin
+    ext = os.path.splitext(tf.name)[1]
+    diff_program = DIFF_PROGRAM_BY_EXT.get(ext, "bsdiff")
+# MStar Android Patch End
 
     ttemp = tf.WriteToTemp()
     stemp = sf.WriteToTemp()
@@ -945,9 +1014,10 @@ def ComputeDifferences(diffs):
 
 
 # map recovery.fstab's fs_types to mount/format "partition types"
-PARTITION_TYPES = { "yaffs2": "MTD", "mtd": "MTD",
-                    "ext4": "EMMC", "emmc": "EMMC",
-                    "ubifs": "MTD" }
+# MStar Android Patch Begin
+PARTITION_TYPES = { "ubifs": "MTD", "mtd": "MTD",
+                    "ext4": "EMMC", "emmc": "EMMC" }
+# MStar Android Patch End
 
 def GetTypeAndDevice(mount_point, info):
   fstab = info["fstab"]
